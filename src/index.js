@@ -23,7 +23,7 @@ const tools = buildTools(octokit);
 
 function makeServer() {
   const server = new Server(
-    { name: "git-mcp-full", version: "1.1.0" },
+    { name: "git-mcp-full", version: "1.2.0" },
     { capabilities: { tools: {} } }
   );
   registerHandlers(server, tools, { ListToolsRequestSchema, CallToolRequestSchema });
@@ -47,18 +47,32 @@ if (transport === "stdio") {
   const app = express();
   app.use(express.json({ limit: "4mb" }));
 
-  app.get("/health", (_req, res) => res.json({ ok: true, name: "git-mcp-full", version: "1.1.0" }));
+  app.get("/health", (_req, res) => res.json({ ok: true, name: "git-mcp-full", version: "1.2.0" }));
 
-  const requireAuth = (req, res, next) => {
+  // Auth aceita o token de duas formas:
+  //  1) Header Authorization: Bearer <token>          (POST /mcp)
+  //  2) Token na propria URL como segmento de path    (POST /mcp/<token>)  ← util para clientes
+  //     (como claude.ai web) que so aceitam URL e nao tem campo para header.
+  const checkToken = (provided) =>
+    typeof provided === "string" && provided.length > 0 && provided === AUTH_TOKEN;
+
+  const requireAuthHeader = (req, res, next) => {
     const h = req.headers.authorization || "";
     const match = h.match(/^Bearer\s+(.+)$/i);
-    if (!match || match[1] !== AUTH_TOKEN) {
+    if (!match || !checkToken(match[1])) {
       return res.status(401).json({ error: "unauthorized: missing or invalid bearer token" });
     }
     next();
   };
 
-  app.post("/mcp", requireAuth, async (req, res) => {
+  const requireAuthPath = (req, res, next) => {
+    if (!checkToken(req.params.token)) {
+      return res.status(401).json({ error: "unauthorized: invalid url token" });
+    }
+    next();
+  };
+
+  const handleMcp = async (req, res) => {
     try {
       const server = makeServer();
       const t = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
@@ -74,11 +88,15 @@ if (transport === "stdio") {
         res.status(500).json({ error: "internal error", message: e.message });
       }
     }
-  });
+  };
 
-  app.get("/mcp", requireAuth, (_req, res) => {
-    res.status(405).json({ error: "method not allowed; use POST" });
-  });
+  app.post("/mcp", requireAuthHeader, handleMcp);
+  app.post("/mcp/:token", requireAuthPath, handleMcp);
+
+  app.get("/mcp", (_req, res) => res.status(405).json({ error: "method not allowed; use POST" }));
+  app.get("/mcp/:token", (_req, res) =>
+    res.status(405).json({ error: "method not allowed; use POST" })
+  );
 
   app.listen(PORT, "0.0.0.0", () => {
     console.error(`[git-mcp-full] modo HTTP escutando em :${PORT} (POST /mcp)`);

@@ -1,6 +1,6 @@
 {
   "name": "git-mcp-full",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "MCP server with full GitHub access (public + private) via Personal Access Token",
   "type": "module",
   "main": "src/index.js",
