@@ -1,0 +1,68 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: sap_context
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  embedder:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.5
+    environment:
+      MODEL_ID: BAAI/bge-m3
+      MAX_BATCH_TOKENS: "8192"
+      MAX_CONCURRENT_REQUESTS: "64"
+    ports:
+      - "8080:80"
+    volumes:
+      - embedder-cache:/data
+
+  langfuse-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfusedata:/var/lib/postgresql/data
+
+  langfuse:
+    image: langfuse/langfuse:latest
+    depends_on:
+      - langfuse-db
+    environment:
+      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      NEXTAUTH_SECRET: dev-secret-change-me
+      NEXTAUTH_URL: http://localhost:3300
+      SALT: dev-salt
+    ports:
+      - "3300:3000"
+
+volumes:
+  pgdata:
+  redisdata:
+  embedder-cache:
+  langfusedata:

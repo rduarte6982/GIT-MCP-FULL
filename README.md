@@ -1,136 +1,79 @@
-# git-mcp-full
+# SAP Context MCP
 
-Servidor **MCP (Model Context Protocol)** que expoe a **API REST oficial do GitHub** (via Octokit) para qualquer cliente MCP — Claude Code, Claude Desktop e tambem **claude.ai web** (via Custom Connector). Com um Personal Access Token voce ganha acesso total a tudo o que a conta enxerga: repos publicos e privados, organizacoes, issues, PRs, gists, notificacoes, secrets (apenas nomes), workflows, etc.
+**Multi-tenant Model Context Protocol backend** that gives Claude (and any other
+MCP client) curated context about SAP — with focus on Brazilian localization
+(NF-e, SPED, J\_1B\* customising, reforma tributária).
 
-Suporta **dois modos de transporte**:
+This repository implements **§ Backend** of the project spec
+(`02_BACKEND.md`). Frontend / dashboard UI lives in a separate repository.
 
-| Modo | Quando usar | Como ativar |
-|---|---|---|
-| `stdio` | Local: Claude Code / Claude Desktop / Cursor rodando na mesma maquina | `MCP_TRANSPORT=stdio` (padrao) |
-| `http`  | Remoto: deploy em Coolify/Render/Fly + conectar do claude.ai web | `MCP_TRANSPORT=http` |
+## Services
 
----
+| Service             | Stack                        | Port  | Responsibility |
+|---------------------|------------------------------|-------|----------------|
+| `apps/mcp-server`   | TypeScript, MCP SDK, Hono    | 3001  | MCP tools, resources, prompts. stdio + Streamable HTTP transports. |
+| `apps/dashboard-api`| TypeScript, Hono             | 3002  | REST API for the dashboard (tenants, API keys, billing, uploads). |
+| `apps/ingestion-worker` | Python 3.12, RQ, unstructured, anthropic | — | Parses → enriches → chunks → contextualises → embeds → persists. |
+| `apps/embedder`     | TEI + BGE-M3                 | 8080  | 1024-dim multilingual embeddings. |
 
-## Instalacao local (modo stdio)
+## Shared packages
 
-```bash
-npm install
-cp .env.example .env   # preencha GITHUB_TOKEN
-npm start
+| Package                | What it owns |
+|------------------------|--------------|
+| `@scm/shared`          | Zod schemas, error hierarchy, tier limits, env loader |
+| `@scm/db`              | Drizzle schema, postgres-js client, hybrid-search SQL |
+| `@scm/auth`            | API-key (argon2id + pepper) + Supabase JWT helpers |
+| `@scm/embeddings`      | Typed client for the embedder service |
+| `@scm/retrieval`       | Hybrid search, entity boost, Cohere rerank |
+| `@scm/billing`         | Stripe SDK + tier mapping + webhook helpers |
+| `@scm/observability`   | pino logger, Langfuse trace helper, metric utils |
+| `@scm/eval`            | Golden-set BR + retrieval-quality runner |
+
+## Dev quickstart
+
+```sh
+corepack enable
+pnpm install
+cp .env.example .env
+docker compose -f docker-compose.dev.yml up -d
+pnpm db:migrate
+pnpm dev
 ```
 
-`~/.claude/settings.json` (Windows: `%USERPROFILE%\.claude\settings.json`):
+See `docs/runbooks/local-dev.md` for the full walk-through.
 
-```json
-{
-  "mcpServers": {
-    "github-full": {
-      "command": "node",
-      "args": ["c:/Users/rodrigoduarte/Downloads/VSCODE/GIT-MCP-FULL/src/index.js"],
-      "env": { "GITHUB_TOKEN": "ghp_xxx" }
-    }
-  }
-}
+## Layout
+
+```
+apps/
+  dashboard-api/        # REST API
+  embedder/             # TEI+BGE-M3 image
+  ingestion-worker/     # Python pipeline
+  mcp-server/           # MCP server
+packages/
+  auth/  billing/  db/  embeddings/  eval/  observability/  retrieval/  shared/
+docs/
+  adrs/  runbooks/  api/
+.github/workflows/
+  ci.yml  eval.yml  deploy.yml
+docker-compose.dev.yml
+turbo.json  biome.json  tsconfig.base.json  pnpm-workspace.yaml
 ```
 
----
+## Status
 
-## Deploy remoto no Coolify (modo http) + uso no claude.ai
+Initial scaffold of the monorepo. Each service is wired end-to-end:
+auth + tenant scoping, retrieval pipeline, ingestion worker, billing webhooks,
+CI, eval harness, Dockerfiles. Stripe / Supabase / Langfuse integrations
+require real keys to exercise; with empty keys the system runs but skips those
+sub-systems gracefully.
 
-### 1. Suba o codigo num repo Git
+## Migration / archived code
 
-Coolify precisa puxar o codigo de um Git remoto (GitHub, GitLab, Gitea). Faca push deste diretorio para um repo seu (privado serve).
+The previous content of this repository (`git-mcp-full`, a single-purpose
+GitHub-API MCP server) lives under `legacy-git-mcp/` and is not part of the new
+monorepo build graph.
 
-### 2. Crie o servico no Coolify
+## License
 
-- **New Resource → Public Repository** (ou Private + GitHub App).
-- **Build Pack: Dockerfile** (o `Dockerfile` ja esta no projeto).
-- **Port exposed: 3000** (o que o container expoe internamente).
-- **Domain**: aponte um subdominio seu, ex: `https://github-mcp.seu-dominio.com`. Coolify tira HTTPS no Let's Encrypt automaticamente.
-- **Environment variables** (aba Environment):
-  ```
-  GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
-  MCP_TRANSPORT=http
-  MCP_AUTH_TOKEN=<gere um token forte, ex: openssl rand -hex 32>
-  PORT=3000
-  ```
-- **Health check path**: `/health` (opcional, ja tem HEALTHCHECK no Dockerfile).
-- **Deploy**.
-
-### 3. Verifique
-
-```bash
-curl https://github-mcp.seu-dominio.com/health
-# {"ok":true,"name":"git-mcp-full","version":"1.1.0"}
-
-curl -X POST https://github-mcp.seu-dominio.com/mcp \
-  -H "authorization: Bearer SEU_MCP_AUTH_TOKEN" \
-  -H "content-type: application/json" \
-  -H "accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
-```
-
-Deve retornar SSE com a lista de tools.
-
-### 4. Conectar no claude.ai (web)
-
-Disponivel para **Claude Pro / Team / Enterprise**.
-
-1. Abra https://claude.ai → **Settings → Connectors → Browse connectors → Add custom connector** (ou "Connect apps").
-2. **Name**: `GitHub Full`
-3. **Remote MCP server URL**: `https://github-mcp.seu-dominio.com/mcp`
-4. **Advanced / Authentication**: escolha bearer/token e cole o valor de `MCP_AUTH_TOKEN`.
-5. **Add** → o claude.ai vai chamar `tools/list` e descobrir as 28 ferramentas.
-6. Numa nova conversa, ative o connector no menu de ferramentas.
-
-> **Importante:** o claude.ai Free **nao** suporta custom connectors. Em planos pagos sem connector ativo, voce ainda pode usar via Claude Desktop apontando o MCP remoto na config.
-
-### 4b. Conectar no Claude Desktop (modo HTTP remoto)
-
-```json
-{
-  "mcpServers": {
-    "github-full-remote": {
-      "url": "https://github-mcp.seu-dominio.com/mcp",
-      "headers": { "Authorization": "Bearer SEU_MCP_AUTH_TOKEN" }
-    }
-  }
-}
-```
-
----
-
-## Ferramentas (28)
-
-| Tool | O que faz |
-|---|---|
-| `get_authenticated_user` | dados da conta dona do token |
-| `list_user_orgs` | organizacoes do usuario (inclui privadas) |
-| `list_repos` | repos do usuario (filtro publico/privado) |
-| `list_org_repos` | repos de uma org (inclui privados) |
-| `get_repo` | detalhes de um repo |
-| `list_repo_contents` | listar arquivos/pastas |
-| `get_file_content` | ler arquivo (decodifica base64) |
-| `list_branches` | branches |
-| `list_commits` / `get_commit` | historico e detalhe de commit |
-| `list_issues` / `get_issue` | issues |
-| `list_pull_requests` / `get_pull_request` / `list_pr_files` | PRs |
-| `list_workflow_runs` | execucoes de Actions |
-| `search_repos` / `search_code` / `search_issues` / `search_users` | buscas |
-| `list_gists` / `get_gist` | gists |
-| `list_notifications` | notificacoes |
-| `list_starred` | favoritos |
-| `list_repo_collaborators` | colaboradores |
-| `list_repo_secrets` | nomes (NUNCA valores) dos secrets |
-| `get_rate_limit` | quota atual do token |
-| `github_api_request` | **PLENOS PODERES** — qualquer rota REST (GET/POST/PATCH/PUT/DELETE) |
-
----
-
-## Avisos de seguranca importantes
-
-- O `GITHUB_TOKEN` da o controle total da conta. **Nunca** commitar `.env`.
-- Em modo HTTP **publico** (Coolify), **qualquer pessoa que descobrir a URL + bearer token** acessa SUA conta GitHub. O `MCP_AUTH_TOKEN` e a unica barreira — gere algo forte (`openssl rand -hex 32`) e nao compartilhe.
-- O servidor multiplica os privilegios do token: a tool `github_api_request` permite **modificar/deletar** qualquer coisa que o token enxerga. Considere usar um token com escopos minimos para producao.
-- Para uso multi-usuario com identidades reais (cada usuario com seu proprio GitHub), o caminho correto e implementar **OAuth 2.0** no servidor MCP — nao esta incluido aqui (e mais complexo). Esta implementacao assume **um token, um dono**.
-- `list_repo_secrets` retorna apenas nomes — a API do GitHub nao expoe valores de secrets.
+Proprietary — duarteapps.cloud.
