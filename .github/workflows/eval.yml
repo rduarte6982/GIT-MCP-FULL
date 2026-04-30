@@ -1,0 +1,31 @@
+name: Retrieval Eval
+
+on:
+  pull_request:
+    paths:
+      - "packages/retrieval/**"
+      - "packages/eval/**"
+      - "packages/db/src/queries/chunks.ts"
+  schedule:
+    - cron: "0 6 * * 1"  # Monday 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.EVAL_TENANT_ID != '' }}
+    env:
+      DATABASE_URL: ${{ secrets.EVAL_DATABASE_URL }}
+      EMBEDDER_URL: ${{ secrets.EVAL_EMBEDDER_URL }}
+      COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
+      EVAL_TENANT_ID: ${{ secrets.EVAL_TENANT_ID }}
+      EVAL_PRECISION_THRESHOLD: "0.75"
+      EVAL_RECALL_THRESHOLD: "0.70"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @scm/eval run

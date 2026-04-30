@@ -1,0 +1,23 @@
+{
+  "name": "git-mcp-full",
+  "version": "1.2.0",
+  "description": "MCP server with full GitHub access (public + private) via Personal Access Token",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "git-mcp-full": "src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "@octokit/rest": "^21.0.2",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

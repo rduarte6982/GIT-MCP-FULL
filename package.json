@@ -1,23 +1,25 @@
 {
-  "name": "git-mcp-full",
-  "version": "1.2.0",
-  "description": "MCP server with full GitHub access (public + private) via Personal Access Token",
-  "type": "module",
-  "main": "src/index.js",
-  "bin": {
-    "git-mcp-full": "src/index.js"
-  },
+  "name": "sap-context-mcp",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "turbo test",
+    "test:e2e": "turbo test:e2e",
+    "type-check": "turbo type-check",
+    "db:generate": "pnpm --filter @scm/db generate",
+    "db:migrate": "pnpm --filter @scm/db migrate",
+    "db:studio": "pnpm --filter @scm/db studio"
   },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.4",
-    "@octokit/rest": "^21.0.2",
-    "dotenv": "^16.4.7",
-    "express": "^4.21.2"
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "turbo": "^2.0.0",
+    "typescript": "^5.5.0"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   }
 }

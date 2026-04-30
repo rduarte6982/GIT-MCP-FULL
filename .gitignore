@@ -1,7 +1,32 @@
 node_modules/
-.env
-.env.local
-.coolify-creds
+dist/
+build/
+coverage/
+.turbo/
+.next/
 *.log
 .DS_Store
-dist/
+
+# env
+.env
+.env.local
+.env.*.local
+.coolify-creds
+
+# python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
